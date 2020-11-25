@@ -17,6 +17,22 @@ Parameters:
     Type: String
     Default: 192.168.2.0/24
     Description: CidrBlock for subnet 02 within the VPC    
+  Subnet03Block:
+    Type: String
+    Default: 192.168.3.0/24
+    Description: CidrBlock for subnet 03 within the VPC    
+  Subnet04Block:
+    Type: String
+    Default: 192.168.4.0/24
+    Description: CidrBlock for subnet 04 within the VPC    
+  Subnet05Block:
+    Type: String
+    Default: 192.168.5.0/24
+    Description: CidrBlock for subnet 05 within the VPC    
+  Subnet06Block:
+    Type: String
+    Default: 192.168.6.0/24
+    Description: CidrBlock for subnet 06 within the VPC                    
   KeyPair:
     Type: AWS::EC2::KeyPair::KeyName
     Description: Specify an already created keypair. KeyPair cannot be created using CF, create it in AWS console
@@ -74,16 +90,65 @@ Resources:
           Value: !Sub '${EnvironmentPrefix}-Private-Subnet01'
 
   Subnet02:
-    Type: 'AWS::EC2::Subnet'
+    Type: AWS::EC2::Subnet
     Metadata:
-      Comment: Subnet 02, a public subnet which will have NATGateway
+      Comment: Subnet 02, a private subnet
     Properties:
-      AvailabilityZone: !If [ IsMumbaiRegion, ap-south-1b, !Select [1, Fn::GetAZs: !Ref 'AWS::Region' ]   ] #currently t2.micro not supported in ap-south-1c hence this logic
+      AvailabilityZone: !If [ IsMumbaiRegion, ap-south-1b, !Select [0,  Fn::GetAZs: !Ref 'AWS::Region' ]   ] 
       CidrBlock: !Ref Subnet02Block
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: !Sub '${EnvironmentPrefix}-Public-Subnet02'
+          Value: !Sub '${EnvironmentPrefix}-Private-Subnet02'
+
+  Subnet03:
+    Type: AWS::EC2::Subnet
+    Metadata:
+      Comment: Subnet 03, a private subnet
+    Properties:
+      AvailabilityZone: !If [ IsMumbaiRegion, ap-south-1b, !Select [0,  Fn::GetAZs: !Ref 'AWS::Region' ]   ] 
+      CidrBlock: !Ref Subnet03Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-Private-Subnet03'                    
+
+  Subnet04:
+    Type: 'AWS::EC2::Subnet'
+    Metadata:
+      Comment: Subnet 04, a public subnet which will have NATGateway
+    Properties:
+      AvailabilityZone: !If [ IsMumbaiRegion, ap-south-1a, !Select [1, Fn::GetAZs: !Ref 'AWS::Region' ]   ] 
+      CidrBlock: !Ref Subnet04Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-Public-Subnet04'
+
+
+  Subnet05:
+    Type: 'AWS::EC2::Subnet'
+    Metadata:
+      Comment: Subnet 05, a public subnet
+    Properties:
+      AvailabilityZone: !If [ IsMumbaiRegion, ap-south-1b, !Select [1, Fn::GetAZs: !Ref 'AWS::Region' ]   ] 
+      CidrBlock: !Ref Subnet05Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-Public-Subnet05'
+
+  Subnet06:
+    Type: 'AWS::EC2::Subnet'
+    Metadata:
+      Comment: Subnet 06, a public subnet
+    Properties:
+      AvailabilityZone: !If [ IsMumbaiRegion, ap-south-1b, !Select [1, Fn::GetAZs: !Ref 'AWS::Region' ]   ] 
+      CidrBlock: !Ref Subnet06Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-Public-Subnet06'          
 
 
   Subnet01RouteTableAssociation:
@@ -96,7 +161,31 @@ Resources:
     Type: 'AWS::EC2::SubnetRouteTableAssociation'
     Properties:
       SubnetId: !Ref Subnet02
+      RouteTableId: !Ref RouteTable
+
+  Subnet03RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet03
+      RouteTableId: !Ref RouteTable            
+
+  Subnet04RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet04
       RouteTableId: !Ref PublicRouteTable
+
+  Subnet05RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet05
+      RouteTableId: !Ref PublicRouteTable      
+
+  Subnet06RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet06
+      RouteTableId: !Ref PublicRouteTable         
       
   InternetGateway:
     Type: AWS::EC2::InternetGateway
@@ -122,7 +211,26 @@ Resources:
         - Key: Name
           Value: !Sub '${EnvironmentPrefix}-NG'
       AllocationId: !GetAtt NatGateway1EIP.AllocationId
-      SubnetId: !Ref Subnet02 #We have created the NATGateway in Subnet02, so EC2 instances in this subnet02 can be reached from outside this VPC, say via SSH
+      SubnetId: !Ref Subnet04 
+
+  NatGateway2:
+      Type: AWS::EC2::NatGateway
+      Properties:
+        Tags:
+          - Key: Name
+            Value: !Sub '${EnvironmentPrefix}-NG'
+        AllocationId: !GetAtt NatGateway1EIP.AllocationId
+        SubnetId: !Ref Subnet05
+
+  NatGateway3:
+      Type: AWS::EC2::NatGateway
+      Properties:
+        Tags:
+          - Key: Name
+            Value: !Sub '${EnvironmentPrefix}-NG'
+        AllocationId: !GetAtt NatGateway1EIP.AllocationId
+        SubnetId: !Ref Subnet06      
+
    
   RouteToIG:
     DependsOn: VPCGatewayAttachment
@@ -132,39 +240,7 @@ Resources:
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway
 
-      
-  EC2SecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupName: !Sub "${EnvironmentPrefix}-ec2-sg"
-      GroupDescription: EC2 security group
-      VpcId: !Ref VPC
-      SecurityGroupIngress:
-        - 
-          Description: Inbound security rule for EC2 instance
-          IpProtocol: tcp
-          CidrIp: 0.0.0.0/0
-          ToPort: 22   #to allow SSH access
-          FromPort: 22     #to allow SSH access  
-          
-  EC2Host:
-    Type: AWS::EC2::Instance
-    Properties:
-      KeyName: !Ref KeyPair
-      ImageId: !Ref ImageId
-      InstanceType: t2.micro
-      Monitoring: false
-      Tags:
-          - Key: Name
-            Value: !Sub "${EnvironmentPrefix}-ec2-host"
-      NetworkInterfaces:
-          - DeviceIndex: "0"
-            DeleteOnTermination: true
-            SubnetId: !Ref Subnet02 #SubnetId of a public subnet , so that we can reach our EC2 from the Internet 
-            AssociatePublicIpAddress: true
-            GroupSet:
-                - !Ref EC2SecurityGroup
 
 Outputs:
-    EC2Host: 
-      Value: !Ref EC2Host                    
+    VPC: 
+      Value: !Ref VPC                    
