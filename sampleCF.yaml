@@ -1,0 +1,170 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Create basic Infra with a VPC, a private subnet, and a public subnet with an EC2 instance in it.
+Parameters:
+  EnvironmentPrefix:
+    Type: String
+    Default: dev
+    Description: Prefix for Env Name
+  VpcBlock:
+    Type: String
+    Default: 192.168.0.0/16
+    Description: The CIDR range for the VPC. This should be a valid private (RFC 1918) CIDR range.    
+  Subnet01Block:
+    Type: String
+    Default: 192.168.1.0/24
+    Description: CidrBlock for subnet 01 within the VPC
+  Subnet02Block:
+    Type: String
+    Default: 192.168.2.0/24
+    Description: CidrBlock for subnet 02 within the VPC    
+  KeyPair:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Specify an already created keypair. KeyPair cannot be created using CF, create it in AWS console
+  ImageId:
+    Type: AWS::EC2::Image::Id
+    Default: ami-0e306788ff2473ccb
+    Description: Specify AMI ID for the EC2 Instance., the default AMI is Amazon linux2 based  
+
+Conditions:
+  IsMumbaiRegion: !Equals [ !Ref 'AWS::Region', ap-south-1 ]        
+
+Resources:
+  VPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: !Ref VpcBlock
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-VPC'
+
+
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-Private-RT'
+        - Key: Network
+          Value: Private
+          
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-Public-RT'
+        - Key: Network
+          Value: Public          
+
+  Subnet01:
+    Type: AWS::EC2::Subnet
+    Metadata:
+      Comment: Subnet 01, a private subnet
+    Properties:
+      AvailabilityZone: !If [ IsMumbaiRegion, ap-south-1a, !Select [0,  Fn::GetAZs: !Ref 'AWS::Region' ]   ] #currently t2.micro not supported in ap-south-1c hence this logic
+      CidrBlock: !Ref Subnet01Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-Private-Subnet01'
+
+  Subnet02:
+    Type: 'AWS::EC2::Subnet'
+    Metadata:
+      Comment: Subnet 02, a public subnet which will have NATGateway
+    Properties:
+      AvailabilityZone: !If [ IsMumbaiRegion, ap-south-1b, !Select [1, Fn::GetAZs: !Ref 'AWS::Region' ]   ] #currently t2.micro not supported in ap-south-1c hence this logic
+      CidrBlock: !Ref Subnet02Block
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-Public-Subnet02'
+
+
+  Subnet01RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet01
+      RouteTableId: !Ref RouteTable
+
+  Subnet02RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref Subnet02
+      RouteTableId: !Ref PublicRouteTable
+      
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-IG'
+          
+  VPCGatewayAttachment:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC             
+
+  NatGateway1EIP:
+    Type: AWS::EC2::EIP
+    DependsOn: VPCGatewayAttachment #DependsOn ensures that NatGateway is created only after Internet gateway is attached to the VPC
+
+  NatGateway1:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${EnvironmentPrefix}-NG'
+      AllocationId: !GetAtt NatGateway1EIP.AllocationId
+      SubnetId: !Ref Subnet02 #We have created the NATGateway in Subnet02, so EC2 instances in this subnet02 can be reached from outside this VPC, say via SSH
+   
+  RouteToIG:
+    DependsOn: VPCGatewayAttachment
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+      
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${EnvironmentPrefix}-ec2-sg"
+      GroupDescription: EC2 security group
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - 
+          Description: Inbound security rule for EC2 instance
+          IpProtocol: tcp
+          CidrIp: 0.0.0.0/0
+          ToPort: 22   #to allow SSH access
+          FromPort: 22     #to allow SSH access  
+          
+  EC2Host:
+    Type: AWS::EC2::Instance
+    Properties:
+      KeyName: !Ref KeyPair
+      ImageId: !Ref ImageId
+      InstanceType: t2.micro
+      Monitoring: false
+      Tags:
+          - Key: Name
+            Value: !Sub "${EnvironmentPrefix}-ec2-host"
+      NetworkInterfaces:
+          - DeviceIndex: "0"
+            DeleteOnTermination: true
+            SubnetId: !Ref Subnet02 #SubnetId of a public subnet , so that we can reach our EC2 from the Internet 
+            AssociatePublicIpAddress: true
+            GroupSet:
+                - !Ref EC2SecurityGroup
+
+Outputs:
+    EC2Host: 
+      Value: !Ref EC2Host                    
