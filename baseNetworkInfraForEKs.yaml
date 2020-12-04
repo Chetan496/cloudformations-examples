@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: Create basic Infra with a VPC, a private subnet, and a public subnet with an EC2 instance in it.
+Description: Create basic Infra with a VPC, private subnets and public subnets for EKS.
 Parameters:
   EnvironmentPrefix:
     Type: String
@@ -33,6 +33,11 @@ Parameters:
     Type: String
     Default: 192.168.6.0/24
     Description: CidrBlock for subnet 06 within the VPC                    
+
+# Subnet01 to Subnet03 will contain Nodes which will run our Pods.
+# Subnet04 to Subnet06 will contain K8 load balancers which Kubernetes will manage, these will load balance traffic to 
+# our pods in Subnet01 to Subnet03.
+
   KeyPair:
     Type: AWS::EC2::KeyPair::KeyName
     Description: Specify an already created keypair. KeyPair cannot be created using CF, create it in AWS console
