@@ -1,7 +1,8 @@
 Note that a EKS Control Plane is not managed by us (customer)
 It is managed by AWS and exists in a VPC managed by AWS.
 Our subnets/security groups need to allow traffic from the external EKS control plane
-
+Refer https://aws.amazon.com/blogs/containers/de-mystifying-cluster-networking-for-amazon-eks-worker-nodes/
+We are using second approach of Public + Private subnets
 
 1. Create VPC with three private subnets and three public subnets (or two public and two private subnets)
 2. The private subnets will be used for the data plane.
